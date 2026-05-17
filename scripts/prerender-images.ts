@@ -34,17 +34,18 @@ const SIZES = {
   full: 72,
 } as const;
 
-async function encode(path: string): Promise<string> {
+async function encode(path: string): Promise<{ b64: string; bytes: number }> {
   const buffer = await sharp(path)
     .rotate()
     .resize(SOURCE_MAX_WIDTH, null, { fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: JPEG_QUALITY, progressive: true })
     .toBuffer();
-  return buffer.toString("base64");
+  return { b64: buffer.toString("base64"), bytes: buffer.length };
 }
 
-function iip(b64: string, widthCols: number): string {
-  return `\x1b]1337;File=inline=1;preserveAspectRatio=1;width=${widthCols}:${b64}\x07`;
+function iip(b64: string, bytes: number, widthCols: number): string {
+  // `size=` is required — the IIP handler aborts silently if it's missing.
+  return `\x1b]1337;File=inline=1;preserveAspectRatio=1;size=${bytes};width=${widthCols}:${b64}\x07`;
 }
 
 async function main() {
@@ -60,13 +61,13 @@ async function main() {
   const cache: Record<string, { thumb: string; full: string }> = {};
   for (const f of files) {
     const t0 = Date.now();
-    const b64 = await encode(join(IMAGES_DIR, f));
+    const { b64, bytes } = await encode(join(IMAGES_DIR, f));
     cache[f] = {
-      thumb: iip(b64, SIZES.thumb),
-      full: iip(b64, SIZES.full),
+      thumb: iip(b64, bytes, SIZES.thumb),
+      full: iip(b64, bytes, SIZES.full),
     };
     console.log(
-      `  ${f.padEnd(32)} ${(Date.now() - t0).toString().padStart(4)}ms  base64:${(b64.length / 1024).toFixed(1)}KB`,
+      `  ${f.padEnd(32)} ${(Date.now() - t0).toString().padStart(4)}ms  jpeg:${(bytes / 1024).toFixed(1)}KB  b64:${(b64.length / 1024).toFixed(1)}KB`,
     );
   }
 
