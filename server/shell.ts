@@ -70,6 +70,11 @@ const h2 = (s: string) => `${CYAN}${s}${RESET}`;
 const tag = (s: string) => `${DIM}${s}${RESET}`;
 const link = (s: string) => `${CYAN}${s}${RESET}`;
 const dirColor = (s: string) => `${BOLD}${BLUE}${s}${RESET}`;
+// OSC 8: arbitrary text → hyperlink. xterm.js renders the inner text as a
+// clickable underlined link with the given URL. WebLinksAddon only catches
+// http(s) URLs in plain text, so use this for bare hostnames like "boxd.sh".
+const hyperlink = (url: string, text: string) =>
+  `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\`;
 
 // ── Portfolio content (data, not strings) ────────────────────────────────────
 
@@ -95,18 +100,18 @@ const HOME = "/home/michiel";
 const aboutText = [
   photoBlock("michiel-main.jpeg", "thumb"),
   `${h1("Michiel Voortman")} — Amsterdam.`,
-  `${tag("Founder · boxd.sh · techno-optimist.")}`,
+  `${tag("Founder · ")}${hyperlink("https://boxd.sh", tag("boxd.sh"))}${tag(" · techno-optimist.")}`,
   "",
   "I've built multi-agent systems for years. Memory, planning, tool use,",
   "orchestration. Every system ran into the same wall: cloud infrastructure",
   "that wasn't shaped for agent workloads. So I went a layer down.",
   "",
-  `I'm building ${h1("boxd.sh")}, the compute primitive agents need.`,
+  `I'm building ${hyperlink("https://boxd.sh", h1("boxd.sh"))}, the compute primitive agents need.`,
   "Hardware-isolated microVMs that cold boot in sub-50ms, pause/resume in",
   "sub-10ms, and fork live memory state in milliseconds.",
   `${tag("European-built, European-hosted.")}`,
   "",
-  `Co-founded ${h1("Rule1.ai")} — creative intelligence helping 100+ marketing`,
+  `Co-founded ${hyperlink("https://rule1.ai", h1("Rule1.ai"))} — creative intelligence helping 100+ marketing`,
   "teams find what actually converts.",
   "",
   "Previously at Microsoft and Booking.com. Founded Scipio.ai and",
@@ -129,7 +134,7 @@ const contactText = [
 
 const boxdFile = [
   "",
-  `${h1("boxd.sh")}  ${tag("·")}  instant cloud computers`,
+  `${hyperlink("https://boxd.sh", h1("boxd.sh"))}  ${tag("·")}  instant cloud computers`,
   "",
   "Real Linux microVMs that boot in under a second, persist between",
   "sessions, and fork in seconds. Every machine is fully isolated with",
@@ -148,7 +153,7 @@ const boxdFile = [
 
 const rule1File = [
   "",
-  `${h1("rule1.ai")}  ${tag("·")}  agent-first creative intelligence`,
+  `${hyperlink("https://rule1.ai", h1("rule1.ai"))}  ${tag("·")}  agent-first creative intelligence`,
   "",
   "Auto-analyzes ad creatives across Meta, TikTok, and Pinterest.",
   "AI-powered tagging, custom hit-rate rules, automated reporting.",
@@ -822,7 +827,7 @@ const BANNER = [
   photoBlock("michiel-main.jpeg", "thumb"),
   `${CYAN}┌──────────────────────────────────────────────────────────┐${RESET}`,
   `${CYAN}│${RESET}  ${BOLD}michiel voortman${RESET}                                        ${CYAN}│${RESET}`,
-  `${CYAN}│${RESET}  ${DIM}building boxd.sh — persistent, forkable computers${RESET}       ${CYAN}│${RESET}`,
+  `${CYAN}│${RESET}  ${DIM}building ${RESET}${hyperlink("https://boxd.sh", DIM + "boxd.sh" + RESET)}${DIM} — persistent, forkable computers${RESET}       ${CYAN}│${RESET}`,
   `${CYAN}│${RESET}  ${DIM}for agents.${RESET}                                             ${CYAN}│${RESET}`,
   `${CYAN}└──────────────────────────────────────────────────────────┘${RESET}`,
   "",
