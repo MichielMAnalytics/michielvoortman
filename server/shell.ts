@@ -16,6 +16,42 @@
  * `cd experience && ls` and `cat 04-accountable.txt`.
  */
 
+// ── Image cache (pre-rendered half-block ANSI art) ───────────────────────────
+
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+type ImageEntry = { small: string; large: string };
+let images: Record<string, ImageEntry> = {};
+try {
+  images = JSON.parse(
+    readFileSync(resolve(__dirname, "_image-cache.json"), "utf8"),
+  );
+} catch {
+  // Missing cache → photos just won't render. Site still works.
+}
+
+const PHOTO_CAPTIONS: Record<string, string> = {
+  "michiel-main.jpeg": "Amsterdam, by the canal.",
+  "michiel-cap.jpg": "Out for a run.",
+  "michiel-marathon-medal.jpg": "Marathon finish.",
+  "michiel-grass.jpg": "Post-race recovery.",
+  "michiel-marathon-group.jpg": "Ren Tegen Kanker — running against cancer.",
+};
+
+function photoBlock(name: string, size: "small" | "large"): string {
+  const img = images[name];
+  if (!img) return "";
+  const caption = PHOTO_CAPTIONS[name];
+  const body = img[size];
+  return caption
+    ? "\n" + body + "\n" + `\x1b[2m${caption}\x1b[0m\n`
+    : "\n" + body + "\n";
+}
+
 // ── ANSI helpers ─────────────────────────────────────────────────────────────
 
 const ESC = "\x1b[";
@@ -57,7 +93,7 @@ type Edu = {
 const HOME = "/home/michiel";
 
 const aboutText = [
-  "",
+  photoBlock("michiel-main.jpeg", "small"),
   `${h1("Michiel Voortman")} — Amsterdam.`,
   `${tag("Founder · boxd.sh · techno-optimist.")}`,
   "",
@@ -354,7 +390,7 @@ const marathonsText = [
   `  ${YELLOW}2023 feb${RESET}  Seville       ${BOLD}3:01:04${RESET}  ${tag("(calf injury)")}`,
   `  ${YELLOW}2022 oct${RESET}  Dublin        ${BOLD}3:00:18${RESET}`,
   `  ${YELLOW}2021 oct${RESET}  Amsterdam     ${BOLD}3:23:00${RESET}  ${tag("(first marathon)")}`,
-  "",
+  photoBlock("michiel-marathon-group.jpg", "small"),
 ].join("\n");
 
 const hackathonsText = [
@@ -435,6 +471,10 @@ const educationEntries: Record<string, FsNode> = Object.fromEntries(
   educations.map((e) => [`${e.slug}.txt`, file(renderEdu(e))]),
 );
 
+const photoEntries: Record<string, FsNode> = Object.fromEntries(
+  Object.keys(images).map((name) => [name, file(photoBlock(name, "large"))]),
+);
+
 const homeDir = dir({
   "about.txt": file(aboutText),
   "contact.txt": file(contactText),
@@ -450,6 +490,7 @@ const homeDir = dir({
       `  ${dirColor("experience/")}   full work history`,
       `  ${dirColor("education/")}    degrees and theses`,
       `  ${dirColor("awards/")}       marathons, hackathons, chess`,
+      `  ${dirColor("photos/")}       a few pictures`,
       `  about.txt      who I am`,
       `  contact.txt    how to reach me`,
       `  cv.txt         everything in one go`,
@@ -468,6 +509,7 @@ const homeDir = dir({
     "hackathons.txt": file(hackathonsText),
     "chess.txt": file(chessText),
   }),
+  photos: dir(photoEntries),
 });
 
 const root: FsDir = dir({
@@ -777,14 +819,14 @@ function dispatch(input: string): string {
 // ── Banner + input loop ──────────────────────────────────────────────────────
 
 const BANNER = [
-  "",
+  photoBlock("michiel-main.jpeg", "small"),
   `${CYAN}┌──────────────────────────────────────────────────────────┐${RESET}`,
   `${CYAN}│${RESET}  ${BOLD}michiel voortman${RESET}                                        ${CYAN}│${RESET}`,
   `${CYAN}│${RESET}  ${DIM}building boxd.sh — persistent, forkable computers${RESET}       ${CYAN}│${RESET}`,
   `${CYAN}│${RESET}  ${DIM}for agents.${RESET}                                             ${CYAN}│${RESET}`,
   `${CYAN}└──────────────────────────────────────────────────────────┘${RESET}`,
   "",
-  `type ${BOLD}help${RESET} for commands, or ${BOLD}ls${RESET} to browse.`,
+  `type ${BOLD}help${RESET} for commands, ${BOLD}ls${RESET} to browse, or ${BOLD}cat photos/*${RESET} for pictures.`,
   "",
   "",
 ].join("\n");
