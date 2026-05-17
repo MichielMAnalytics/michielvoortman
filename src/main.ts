@@ -1,6 +1,7 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { ImageAddon } from "@xterm/addon-image";
 import "@xterm/xterm/css/xterm.css";
 
 const term = new Terminal({
@@ -21,6 +22,13 @@ const term = new Terminal({
 const fit = new FitAddon();
 term.loadAddon(fit);
 term.loadAddon(new WebLinksAddon());
+term.loadAddon(
+  new ImageAddon({
+    sixelSupport: false,
+    iipSupport: true,
+    storageLimit: 256,
+  }),
+);
 
 const el = document.getElementById("term")!;
 term.open(el);

@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-type ImageEntry = { small: string; large: string };
+type ImageEntry = { thumb: string; full: string };
 let images: Record<string, ImageEntry> = {};
 try {
   images = JSON.parse(
@@ -42,7 +42,7 @@ const PHOTO_CAPTIONS: Record<string, string> = {
   "michiel-marathon-group.jpg": "Ren Tegen Kanker — running against cancer.",
 };
 
-function photoBlock(name: string, size: "small" | "large"): string {
+function photoBlock(name: string, size: "thumb" | "full"): string {
   const img = images[name];
   if (!img) return "";
   const caption = PHOTO_CAPTIONS[name];
@@ -93,7 +93,7 @@ type Edu = {
 const HOME = "/home/michiel";
 
 const aboutText = [
-  photoBlock("michiel-main.jpeg", "small"),
+  photoBlock("michiel-main.jpeg", "thumb"),
   `${h1("Michiel Voortman")} — Amsterdam.`,
   `${tag("Founder · boxd.sh · techno-optimist.")}`,
   "",
@@ -390,7 +390,7 @@ const marathonsText = [
   `  ${YELLOW}2023 feb${RESET}  Seville       ${BOLD}3:01:04${RESET}  ${tag("(calf injury)")}`,
   `  ${YELLOW}2022 oct${RESET}  Dublin        ${BOLD}3:00:18${RESET}`,
   `  ${YELLOW}2021 oct${RESET}  Amsterdam     ${BOLD}3:23:00${RESET}  ${tag("(first marathon)")}`,
-  photoBlock("michiel-marathon-group.jpg", "small"),
+  photoBlock("michiel-marathon-group.jpg", "thumb"),
 ].join("\n");
 
 const hackathonsText = [
@@ -472,7 +472,7 @@ const educationEntries: Record<string, FsNode> = Object.fromEntries(
 );
 
 const photoEntries: Record<string, FsNode> = Object.fromEntries(
-  Object.keys(images).map((name) => [name, file(photoBlock(name, "large"))]),
+  Object.keys(images).map((name) => [name, file(photoBlock(name, "full"))]),
 );
 
 const homeDir = dir({
@@ -819,7 +819,7 @@ function dispatch(input: string): string {
 // ── Banner + input loop ──────────────────────────────────────────────────────
 
 const BANNER = [
-  photoBlock("michiel-main.jpeg", "small"),
+  photoBlock("michiel-main.jpeg", "thumb"),
   `${CYAN}┌──────────────────────────────────────────────────────────┐${RESET}`,
   `${CYAN}│${RESET}  ${BOLD}michiel voortman${RESET}                                        ${CYAN}│${RESET}`,
   `${CYAN}│${RESET}  ${DIM}building boxd.sh — persistent, forkable computers${RESET}       ${CYAN}│${RESET}`,

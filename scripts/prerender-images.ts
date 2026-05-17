@@ -1,15 +1,19 @@
 /**
- * Pre-renders public/images/* to half-block ANSI art and writes
- * server/_image-cache.json.
+ * Pre-renders public/images/* to iTerm inline-image escape sequences
+ * (the IIP protocol that xterm-addon-image's `iipSupport` decodes).
  *
- * Each text row encodes 2 image rows via ▀ (upper half block) with the
- * top pixel as foreground colour and the bottom pixel as background.
- * Adjacent cells skip emitting colour codes that haven't changed
- * (basic per-row RLE).
+ *   ESC ] 1337 ; File=inline=1;preserveAspectRatio=1;width=Ncols : BASE64 BEL
  *
- * Two sizes per image:
- *   small  — 36 char wide, suitable for banner / inline use
- *   large  — 72 char wide, suitable for `cat ~/photos/X.jpg`
+ * The browser-side ImageAddon receives the OSC, base64-decodes, and
+ * renders the JPEG at native browser pixel resolution — so the image
+ * stays crisp regardless of the character grid.
+ *
+ * Two display widths per image:
+ *   thumb — 36 char cells wide (banner / inline)
+ *   full  — 72 char cells wide (~/photos/*.jpg)
+ *
+ * Source is re-encoded once at SOURCE_MAX_WIDTH px via sharp; the same
+ * base64 blob is referenced from both sizes (the addon scales).
  */
 
 import sharp from "sharp";
@@ -22,84 +26,53 @@ const ROOT = resolve(__dirname, "..");
 const IMAGES_DIR = resolve(ROOT, "public/images");
 const OUT_FILE = resolve(ROOT, "server/_image-cache.json");
 
-const SIZES = { small: 36, large: 72 } as const;
+const SOURCE_MAX_WIDTH = 1400;
+const JPEG_QUALITY = 85;
 
-async function renderHalfBlock(path: string, charWidth: number): Promise<string> {
-  const meta = await sharp(path).rotate().metadata();
-  const aspect = meta.height! / meta.width!;
-  const pixelW = charWidth;
-  // Char cells are ~2:1 tall:wide; each text row stores 2 pixels.
-  // Pixel-H that preserves visual aspect = pixelW * aspect.
-  let pixelH = Math.max(2, Math.round(pixelW * aspect));
-  if (pixelH % 2 !== 0) pixelH++;
+const SIZES = {
+  thumb: 36,
+  full: 72,
+} as const;
 
-  const { data, info } = await sharp(path)
+async function encode(path: string): Promise<string> {
+  const buffer = await sharp(path)
     .rotate()
-    .resize(pixelW, pixelH, { fit: "fill" })
-    .removeAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+    .resize(SOURCE_MAX_WIDTH, null, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: JPEG_QUALITY, progressive: true })
+    .toBuffer();
+  return buffer.toString("base64");
+}
 
-  const W = info.width;
-  const H = info.height;
-  const lines: string[] = [];
-
-  for (let y = 0; y < H; y += 2) {
-    let line = "";
-    let lastFg = "";
-    let lastBg = "";
-    for (let x = 0; x < W; x++) {
-      const t = (y * W + x) * 3;
-      const fg = `${data[t]};${data[t + 1]};${data[t + 2]}`;
-      let bg: string;
-      if (y + 1 < H) {
-        const b = ((y + 1) * W + x) * 3;
-        bg = `${data[b]};${data[b + 1]};${data[b + 2]}`;
-      } else {
-        bg = "0;0;0";
-      }
-
-      let codes = "";
-      if (fg !== lastFg && bg !== lastBg) {
-        codes = `\x1b[38;2;${fg};48;2;${bg}m`;
-      } else if (fg !== lastFg) {
-        codes = `\x1b[38;2;${fg}m`;
-      } else if (bg !== lastBg) {
-        codes = `\x1b[48;2;${bg}m`;
-      }
-      lastFg = fg;
-      lastBg = bg;
-      line += codes + "▀";
-    }
-    lines.push(line + "\x1b[0m");
-  }
-
-  return lines.join("\n");
+function iip(b64: string, widthCols: number): string {
+  return `\x1b]1337;File=inline=1;preserveAspectRatio=1;width=${widthCols}:${b64}\x07`;
 }
 
 async function main() {
-  const files = (await readdir(IMAGES_DIR)).filter((f) =>
-    /\.(jpe?g|png|webp)$/i.test(f),
-  );
+  const files = (await readdir(IMAGES_DIR))
+    .filter((f) => /\.(jpe?g|png|webp)$/i.test(f))
+    .sort();
+
   if (!files.length) {
-    console.error(`No images found in ${IMAGES_DIR}`);
+    console.error(`No images in ${IMAGES_DIR}`);
     process.exit(1);
   }
 
-  const cache: Record<string, { small: string; large: string }> = {};
+  const cache: Record<string, { thumb: string; full: string }> = {};
   for (const f of files) {
-    const path = join(IMAGES_DIR, f);
-    process.stdout.write(`  rendering ${f} ...`);
     const t0 = Date.now();
-    const small = await renderHalfBlock(path, SIZES.small);
-    const large = await renderHalfBlock(path, SIZES.large);
-    cache[f] = { small, large };
-    console.log(` ${Date.now() - t0}ms  (s:${small.length}B l:${large.length}B)`);
+    const b64 = await encode(join(IMAGES_DIR, f));
+    cache[f] = {
+      thumb: iip(b64, SIZES.thumb),
+      full: iip(b64, SIZES.full),
+    };
+    console.log(
+      `  ${f.padEnd(32)} ${(Date.now() - t0).toString().padStart(4)}ms  base64:${(b64.length / 1024).toFixed(1)}KB`,
+    );
   }
 
   await mkdir(dirname(OUT_FILE), { recursive: true });
   await writeFile(OUT_FILE, JSON.stringify(cache));
-  console.log(`wrote ${OUT_FILE}`);
+  console.log(`\nwrote ${OUT_FILE}`);
 }
 
 main().catch((e) => {
