@@ -1,6 +1,11 @@
 # michielvoortman.com
 
+![3D VT100 viewer with the live portfolio rendered inside the CRT](public/images/vt100-hero.png)
+
 A single-terminal portfolio. The whole site is one xterm.js window backed by a real PTY shell — so the same backend can drive a physical VT100-style terminal later.
+
+**[/](https://michielvoortman.boxd.sh/)** serves a 3D VT100 with the live portfolio rendered as an iframe inside the CRT. The 3D keyboard is clickable, real-keyboard input also presses the matching keycap, and clicking the engraved `boxd` logo on the side detonates the entire unit (try it).
+**[/term](https://michielvoortman.boxd.sh/term)** is the plain xterm.js page — the same surface the 3D viewer iframes.
 
 ## Stack
 

@@ -64,6 +64,14 @@ function send(msg: object) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
+// Exposed for the 3D /vt100 viewer: lets the parent send raw input bytes
+// (e.g. "\r" for Return) without going through synthetic KeyboardEvents.
+(window as unknown as { __sendInput: (d: string) => void }).__sendInput = (d) => {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "input", data: d }));
+  }
+};
+
 window.addEventListener("resize", () => {
   fit.fit();
   send({ type: "resize", cols: term.cols, rows: term.rows });

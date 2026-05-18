@@ -31,7 +31,12 @@ const http = createServer(async (req, res) => {
       const s = await stat(file);
       if (s.isDirectory()) file = join(file, "index.html");
     } catch {
-      file = join(DIST, "index.html");
+      try {
+        await stat(file + ".html");
+        file = file + ".html";
+      } catch {
+        file = join(DIST, "index.html");
+      }
     }
     const body = await readFile(file);
     res.writeHead(200, {
