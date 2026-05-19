@@ -1454,11 +1454,13 @@ const _screenQuat = new THREE.Quaternion();
 const _screenFwd = new THREE.Vector3();
 const _toCamera = new THREE.Vector3();
 
-// Hide each CSS3D iframe when the camera moves behind it. CSS3DObjects are
-// rendered by a separate DOM-based renderer that ignores WebGL depth, so
-// without this they'd punch through the case from the back and show as
-// mirrored text. Setting `object.visible = false` makes CSS3DRenderer skip
-// it entirely.
+// Hide each CSS3D iframe when the camera is behind it OR viewing it at a
+// grazing angle. CSS3DObjects are rendered by a separate DOM-based renderer
+// that ignores WebGL depth, so without this they'd punch through the case
+// from the back, and at near-edge-on angles they'd appear as a thin slit
+// poking out of the side of the case (especially for neighboring machines).
+// cos(72°) ≈ 0.31 — screens fade out before they degenerate into a sliver.
+const SCREEN_VISIBILITY_COS = 0.31;
 function tickScreens() {
   for (const m of machines) {
     const screen = findCSS3DObject(m.group);
@@ -1466,9 +1468,8 @@ function tickScreens() {
     screen.getWorldPosition(_screenPos);
     screen.getWorldQuaternion(_screenQuat);
     _screenFwd.set(0, 0, 1).applyQuaternion(_screenQuat);
-    _toCamera.subVectors(camera.position, _screenPos);
-    // Positive dot → camera is in front of the screen plane.
-    screen.visible = _screenFwd.dot(_toCamera) > 0;
+    _toCamera.subVectors(camera.position, _screenPos).normalize();
+    screen.visible = _screenFwd.dot(_toCamera) > SCREEN_VISIBILITY_COS;
   }
 }
 
