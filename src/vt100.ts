@@ -1216,6 +1216,11 @@ function tickExplosion(dt: number) {
 function showEasterEgg() {
   const overlay = document.createElement("div");
   overlay.id = "easter-egg";
+  // Widest line of the boot screen is the 50-char ASCII box. At a monospace
+  // glyph width of ~0.6em, fontSize × 30 ≈ content width. We pick font-size
+  // so 30 × fontSize fits inside (viewport − padding × 2): clamp scales it
+  // from ~10px on a 320-px phone up to 15px on desktop without ever
+  // overflowing the viewport.
   Object.assign(overlay.style, {
     position: "fixed",
     inset: "0",
@@ -1223,14 +1228,15 @@ function showEasterEgg() {
       "radial-gradient(ellipse at center, #022 0%, #000 75%)",
     color: "#7cffae",
     fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
-    fontSize: "15px",
+    fontSize: "clamp(10px, 2.8vw, 15px)",
     lineHeight: "1.55",
-    padding: "max(40px, 6vh) max(40px, 8vw)",
+    padding: "clamp(18px, 5vh, 60px) clamp(14px, 4vw, 70px)",
     zIndex: "200",
-    overflow: "hidden",
+    overflow: "auto",
     opacity: "0",
     transition: "opacity 600ms ease",
     textShadow: "0 0 6px rgba(124,255,174,0.55), 0 0 18px rgba(60,255,150,0.18)",
+    WebkitOverflowScrolling: "touch",
   } as CSSStyleDeclaration);
 
   // Scanline + vignette layers
@@ -1254,7 +1260,11 @@ function showEasterEgg() {
   const pre = document.createElement("pre");
   Object.assign(pre.style, {
     margin: "0",
-    whiteSpace: "pre",
+    // pre-wrap so long lines (the calendar URL on a narrow phone) can wrap
+    // at spaces — but ASCII boxes still align because every leading/inner
+    // whitespace is preserved.
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
     position: "relative",
     zIndex: "1",
   } as CSSStyleDeclaration);
