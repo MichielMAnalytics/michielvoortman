@@ -915,8 +915,13 @@ function doFork(src: Machine) {
   const tgtFrom = controls.target.clone();
   const tgtTo = new THREE.Vector3(0, 4.5, 0);
 
-  controls.minAzimuthAngle = -Math.PI * 0.65;
-  controls.maxAzimuthAngle = Math.PI * 0.65;
+  // Keep the camera in front of the unit even with multiple machines.
+  // Beyond ~75° from front the user would see the CSS3D screens from
+  // behind (which renders mirrored text — looks broken).
+  controls.minAzimuthAngle = -Math.PI * 0.42;
+  controls.maxAzimuthAngle = Math.PI * 0.42;
+  controls.minPolarAngle = Math.PI * 0.20;
+  controls.maxPolarAngle = Math.PI * 0.50; // never below horizon
   controls.minDistance = 20;
   controls.maxDistance = Math.max(70, distance + 30);
 
@@ -1331,6 +1336,7 @@ function showEasterEgg() {
 (window as unknown as { __vt100: unknown }).__vt100 = {
   keycaps, camera, renderer, raycaster,
   get logoMesh() { return logoMesh; },
+  get controls() { return controls; },
   startExplosion,
   // Return screen (clientX, clientY) for a keycap by its label.
   screenOf(label: string) {
