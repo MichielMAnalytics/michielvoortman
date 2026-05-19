@@ -51,18 +51,24 @@ function intercept(data: string): string {
   return data.split(FORK_MARKER).join("");
 }
 
+// Cache every byte the PTY has streamed at us so the fork command can
+// replay the entire raw sequence into the clone — that's the only way to
+// preserve inline IIP images, which live as OSC sequences outside xterm's
+// textual buffer.
+let rawHistory = "";
+
 ws.onopen = () => {
   send({ type: "resize", cols: term.cols, rows: term.rows });
 };
 
 ws.onmessage = (ev) => {
-  if (typeof ev.data === "string") {
-    term.write(intercept(ev.data));
-  } else {
-    // Binary frame → decode as utf-8 so we can sniff for the fork marker.
-    const text = new TextDecoder().decode(new Uint8Array(ev.data));
-    term.write(intercept(text));
-  }
+  const text =
+    typeof ev.data === "string"
+      ? ev.data
+      : new TextDecoder().decode(new Uint8Array(ev.data));
+  const cleaned = intercept(text);
+  rawHistory += cleaned;
+  term.write(cleaned);
   term.scrollToBottom();
 };
 
@@ -94,23 +100,10 @@ bridge.__sendInput = (d) => {
   }
 };
 
-// Return the textual snapshot of every non-empty line in the active buffer,
-// joined with CRLFs. Used by the fork command to seed the clone terminal.
-bridge.__getBuffer = () => {
-  const buf = term.buffer.active;
-  const lines: string[] = [];
-  // Walk from the top of the scrollback through the visible viewport.
-  const total = buf.length;
-  for (let y = 0; y < total; y++) {
-    const line = buf.getLine(y);
-    if (!line) continue;
-    lines.push(line.translateToString(true));
-  }
-  // Trim trailing empty lines so the clone's prompt sits right where the
-  // source's does, not at the bottom of the buffer.
-  while (lines.length && lines[lines.length - 1] === "") lines.pop();
-  return lines.join("\r\n") + "\r\n";
-};
+// Return the raw byte history this PTY has produced. Includes IIP image
+// OSC sequences, ANSI colors, cursor moves — everything xterm needs to
+// reconstruct the exact screen on the clone side.
+bridge.__getBuffer = () => rawHistory;
 
 // Write hydration text into xterm before / alongside the live PTY stream.
 bridge.__hydrate = (text) => {

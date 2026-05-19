@@ -895,13 +895,11 @@ const BANNER = [
   "",
 ].join("\n");
 
-// PORTFOLIO_NOBANNER=1 → start silent and emit only a prompt. Used when the
-// shell is spawned as a "forked" session: the parent iframe pre-hydrates
-// xterm with a snapshot of the source terminal so the user sees an instant
-// twin. Skipping the banner here keeps both screens visually identical.
-if (process.env.PORTFOLIO_NOBANNER === "1") {
-  process.stdout.write(prompt());
-} else {
+// PORTFOLIO_NOBANNER=1 → start completely silent. Used when the shell is
+// spawned as a "forked" session: the parent iframe pre-hydrates xterm with
+// the raw byte stream from the source PTY (including IIP images and the
+// trailing prompt), so emitting *anything* here would duplicate output.
+if (process.env.PORTFOLIO_NOBANNER !== "1") {
   process.stdout.write(CLEAR_SCREEN + BANNER + prompt());
 }
 
