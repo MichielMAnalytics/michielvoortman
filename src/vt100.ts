@@ -808,9 +808,10 @@ type Machine = {
   logoMesh: THREE.Mesh | null;
 };
 const machines: Machine[] = [];
-// Center-to-center distance between adjacent machines. Must exceed MON_W (11)
-// so the case bodies don't overlap.
-const SLIDE_SPACING = 13.5;
+// Center-to-center distance between adjacent forked machines. Must exceed
+// TRAY_W (≈13.53) plus a comfortable gap so neighbouring keyboards don't
+// look glued together.
+const SLIDE_SPACING = 15.5;
 
 type ChildBridge = {
   __sendInput?: (d: string) => void;
