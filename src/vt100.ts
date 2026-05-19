@@ -301,6 +301,7 @@ let logoMesh: THREE.Mesh | null = null;
     }),
   );
   logoMesh.rotation.y = Math.PI / 2; // face +X
+  logoMesh.userData.isBoxdLogo = true; // tag so clones can be found after .clone(true)
   // Sit just outside the bevelled right face, above the wordmark.
   // Wordmark center is at y = 1.0 + (MON_H - HOOD_H)/2 = 4.85, plateH = 1.2,
   // so its top is at y = 5.45. Logo sits with a small gap above that.
@@ -474,6 +475,7 @@ type KeyInst = {
   def: KeyDef;
   mesh: THREE.Mesh;
   restY: number;
+  machineIdx: number; // index into `machines[]` — set to 0 for source, n for clones
 };
 const keycaps: KeyInst[] = [];
 
@@ -562,7 +564,7 @@ function emitRow(defs: KeyDef[], rowZ: number, xStart: number) {
     mesh.position.set(x + w / 2, trayY, trayZCenter + rowZ);
     terminal.add(mesh);
     if (!def.ghost) {
-      keycaps.push({ def, mesh, restY: mesh.position.y });
+      keycaps.push({ def, mesh, restY: mesh.position.y, machineIdx: 0 });
       mesh.userData.keyDef = def;
     }
     x += w + KEY_GAP;
@@ -743,6 +745,49 @@ function buildScreen(src: string, title: string, onLoad?: () => void): ScreenHan
   return { wrapper, iframe, css3d };
 }
 
+// ---------- Machine registry ----------
+// Each "machine" is one VT100 unit: a terminal Object3D group, its own iframe
+// (and therefore PTY), and references to its logo + keycaps. Every fork
+// produces a fully-independent peer that can itself be forked or exploded.
+type Machine = {
+  group: THREE.Group;
+  iframe: HTMLIFrameElement;
+  logoMesh: THREE.Mesh | null;
+};
+const machines: Machine[] = [];
+// Center-to-center distance between adjacent machines. Must exceed MON_W (11)
+// so the case bodies don't overlap.
+const SLIDE_SPACING = 13.5;
+
+type ChildBridge = {
+  __sendInput?: (d: string) => void;
+  __getBuffer?: () => string;
+  __hydrate?: (text: string) => void;
+};
+
+function findCSS3DObject(root: THREE.Object3D): CSS3DObject | null {
+  let found: CSS3DObject | null = null;
+  root.traverse((o) => {
+    if (found) return;
+    if ((o as { isCSS3DObject?: boolean }).isCSS3DObject || o.constructor.name === "CSS3DObject") {
+      found = o as CSS3DObject;
+    }
+  });
+  return found;
+}
+
+function findLogoMesh(root: THREE.Object3D): THREE.Mesh | null {
+  let found: THREE.Mesh | null = null;
+  root.traverse((o) => {
+    if (!found && (o as THREE.Mesh).isMesh && o.userData?.isBoxdLogo) {
+      found = o as THREE.Mesh;
+    }
+  });
+  return found;
+}
+
+// Source machine — terminal group already in the scene, logo created
+// asynchronously by the SVG fetch above.
 const sourceScreen = buildScreen("/term", "michielvoortman portfolio terminal", () => {
   loading.classList.add("hidden");
   setTimeout(() => loading.remove(), 600);
@@ -752,88 +797,137 @@ const ptyIframe = sourceScreen.iframe;
 const screenWrapper = sourceScreen.wrapper;
 terminal.add(sourceScreen.css3d);
 
-// ---------- Fork easter command: clone the entire VM next to the source ----------
-let forkStarted = false;
-
-type ChildBridge = {
-  __sendInput?: (d: string) => void;
-  __getBuffer?: () => string;
-  __hydrate?: (text: string) => void;
+const sourceMachine: Machine = {
+  group: terminal,
+  iframe: sourceScreen.iframe,
+  logoMesh: null, // populated when SVG load completes
 };
+machines.push(sourceMachine);
+
+// When the async logo loader resolves, attach the mesh to the source machine.
+// Poll briefly because the logo IIFE runs concurrently.
+(function bindLogoToSource() {
+  const id = setInterval(() => {
+    if (logoMesh) {
+      sourceMachine.logoMesh = logoMesh;
+      clearInterval(id);
+    }
+  }, 50);
+  setTimeout(() => clearInterval(id), 5000);
+})();
+
+// ---------- Fork: any machine can spawn a forked peer to its right ----------
+function machineForIframe(win: WindowProxy | null): Machine | null {
+  if (!win) return null;
+  return machines.find((m) => m.iframe.contentWindow === win) ?? null;
+}
 
 window.addEventListener("message", (ev) => {
   if (!ev.data || ev.data.type !== "boxd-fork") return;
-  if (forkStarted || explosionStarted) return;
-  forkStarted = true;
-  doFork();
+  if (explosionStarted) return;
+  const src = machineForIframe(ev.source as WindowProxy | null);
+  if (!src) return;
+  doFork(src);
 });
 
-function findCSS3DObject(root: THREE.Object3D): CSS3DObject | null {
-  let found: CSS3DObject | null = null;
-  root.traverse((o) => {
-    if (!found && (o as CSS3DObject).isObject3D && (o as CSS3DObject).element instanceof HTMLElement) {
-      // CSS3DObject doesn't expose a stable type guard; the `element` prop is the tell.
-      if ((o as { isCSS3DObject?: boolean }).isCSS3DObject || o.constructor.name === "CSS3DObject") {
-        found = o as CSS3DObject;
-      }
-    }
-  });
-  return found;
+function easeInOut(t: number): number {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
-function doFork() {
-  // 1. Snapshot the source PTY screen via the bridge exposed by main.ts.
-  const win = ptyIframe.contentWindow as unknown as ChildBridge | null;
+function doFork(src: Machine) {
+  // Snapshot source PTY (raw bytes, including IIP images).
+  const win = src.iframe.contentWindow as unknown as ChildBridge | null;
   const snapshot = win?.__getBuffer?.() ?? "";
 
-  // 2. Deep-clone the entire terminal Object3D tree. CSS3DObject's `.element`
-  // is shared by reference after clone, so we hunt it down in the clone and
-  // replace it with a fresh screen+iframe.
-  const cloneRoot = terminal.clone(true);
+  // Deep-clone the source's group. CSS3DObject's .element is shared after
+  // clone, so we strip the stale screen and inject a fresh iframe.
+  const cloneRoot = src.group.clone(true);
   const staleScreen = findCSS3DObject(cloneRoot);
   if (staleScreen && staleScreen.parent) staleScreen.parent.remove(staleScreen);
 
-  // 3. Spawn a banner-less clone iframe and hydrate it once its bridge appears.
   const cloneScreen = buildScreen("/term?nobanner=1", "forked terminal", () => {
     const tryHydrate = (attempts = 0) => {
       const cw = cloneScreen.iframe.contentWindow as unknown as ChildBridge | null;
-      if (cw?.__hydrate) {
-        cw.__hydrate(snapshot);
-      } else if (attempts < 40) {
-        setTimeout(() => tryHydrate(attempts + 1), 50);
-      }
+      if (cw?.__hydrate) cw.__hydrate(snapshot);
+      else if (attempts < 40) setTimeout(() => tryHydrate(attempts + 1), 50);
     };
     tryHydrate();
   });
   cloneRoot.add(cloneScreen.css3d);
   scene.add(cloneRoot);
 
-  // 4. Slide the source left, clone right, with a brief animation.
-  const SLIDE = 8.5;
-  const start = performance.now();
-  const DURATION = 900;
+  // Register the clone as a first-class machine with its own logo ref.
+  const clone: Machine = {
+    group: cloneRoot,
+    iframe: cloneScreen.iframe,
+    logoMesh: findLogoMesh(cloneRoot),
+  };
+  machines.push(clone);
+  const cloneIdxInRegistry = machines.length - 1;
 
-  // 5. Pan camera out to frame both terminals.
+  // Register every cloned keycap so its 3D keyboard sends input to the
+  // clone's PTY, with a press animation that matches the source's.
+  cloneRoot.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh && o.userData?.keyDef) {
+      const mesh = o as THREE.Mesh;
+      keycaps.push({
+        def: o.userData.keyDef as KeyDef,
+        mesh,
+        restY: mesh.position.y,
+        machineIdx: cloneIdxInRegistry,
+      });
+      keycapMeshes.push(mesh);
+    }
+  });
+
+  // Layout: position the clone immediately to the right of the source, then
+  // re-center the whole row at x=0 with smooth slide-from-current animation.
+  const srcX = src.group.position.x;
+  const startPositions = machines.map((m) => m.group.position.x);
+  // Clone visually emerges from the source's spot.
+  cloneRoot.position.x = srcX;
+  startPositions[machines.length - 1] = srcX;
+
+  // Target positions: spread evenly across SLIDE_SPACING, centered on 0,
+  // preserving left-to-right order so the new machine appears to the right
+  // of its parent. Insert the clone right after the source.
+  const ordered = machines.slice();
+  // Reorder: keep existing order but ensure clone sits immediately after src.
+  // (machines already has clone at the end; pull it in next to src.)
+  const srcIdx = ordered.indexOf(src);
+  const cloneIdx = ordered.indexOf(clone);
+  if (srcIdx !== -1 && cloneIdx !== -1 && cloneIdx !== srcIdx + 1) {
+    ordered.splice(cloneIdx, 1);
+    ordered.splice(srcIdx + 1, 0, clone);
+  }
+
+  const N = ordered.length;
+  const totalWidth = (N - 1) * SLIDE_SPACING;
+  const targetX = (i: number) => -totalWidth / 2 + i * SLIDE_SPACING;
+  const targets: number[] = ordered.map((_, i) => targetX(i));
+  const starts: number[] = ordered.map((m) => m.group.position.x);
+
+  // Camera frames the new row. Distance scales with machine count.
+  const baseDistance = 24;
+  const distance = Math.max(baseDistance, totalWidth * 1.8 + 18);
   const camFrom = camera.position.clone();
-  const camTo = new THREE.Vector3(0, 11, 40);
+  const camTo = new THREE.Vector3(0, 11 + N * 0.6, distance);
   const tgtFrom = controls.target.clone();
   const tgtTo = new THREE.Vector3(0, 4.5, 0);
 
-  // Relax orbit clamps now that there's more to look at.
   controls.minAzimuthAngle = -Math.PI * 0.65;
   controls.maxAzimuthAngle = Math.PI * 0.65;
   controls.minDistance = 20;
-  controls.maxDistance = 70;
+  controls.maxDistance = Math.max(70, distance + 30);
 
-  function easeInOut(t: number): number {
-    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-  }
-
+  const startT = performance.now();
+  const DURATION = 900;
   function animateFork() {
-    const t = Math.min(1, (performance.now() - start) / DURATION);
+    const t = Math.min(1, (performance.now() - startT) / DURATION);
     const k = easeInOut(t);
-    terminal.position.x = -SLIDE * k;
-    cloneRoot.position.x = SLIDE * k;
+    for (let i = 0; i < ordered.length; i++) {
+      ordered[i].group.position.x = starts[i] + (targets[i] - starts[i]) * k;
+    }
     camera.position.lerpVectors(camFrom, camTo, k);
     controls.target.lerpVectors(tgtFrom, tgtTo, k);
     if (t < 1) requestAnimationFrame(animateFork);
@@ -871,10 +965,11 @@ function bytesFor(def: KeyDef): string | null {
   return null;
 }
 
-function dispatchToTerminal(def: KeyDef) {
+function dispatchToTerminal(def: KeyDef, machineIdx: number) {
   const data = bytesFor(def);
   if (!data) return;
-  const w = ptyIframe.contentWindow as unknown as {
+  const m = machines[machineIdx] ?? machines[0];
+  const w = m.iframe.contentWindow as unknown as {
     __sendInput?: (d: string) => void;
   };
   if (typeof w?.__sendInput === "function") {
@@ -910,7 +1005,7 @@ for (const k of keycaps) {
 // Raycaster — click a 3D keycap to type it.
 const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
-const keycapMeshes = keycaps.map((k) => k.mesh);
+const keycapMeshes: THREE.Mesh[] = keycaps.map((k) => k.mesh);
 
 function setNdc(ev: PointerEvent) {
   const r = renderer.domElement.getBoundingClientRect();
@@ -932,23 +1027,27 @@ let pendingKey: { inst: KeyInst; x: number; y: number; t: number } | null = null
 const CLICK_RADIUS = 6; // px
 const CLICK_TIME = 500; // ms
 
+function logoMeshAt(ev: PointerEvent): THREE.Mesh | null {
+  const candidates = machines.map((m) => m.logoMesh).filter(Boolean) as THREE.Mesh[];
+  if (!candidates.length) return null;
+  setNdc(ev);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(candidates, false);
+  return hits.length ? (hits[0].object as THREE.Mesh) : null;
+}
+
 // IMPORTANT: this listener runs BEFORE OrbitControls (added later). Calling
 // stopImmediatePropagation on a keycap (or logo) hit prevents OrbitControls
 // from starting an orbit drag for that pointer interaction.
 let pendingLogo: { x: number; y: number; t: number } | null = null;
 renderer.domElement.addEventListener("pointerdown", (ev) => {
-  // Logo gets priority — it sits next to the case wall but isn't a keycap.
-  if (logoMesh && !explosionStarted) {
-    setNdc(ev);
-    raycaster.setFromCamera(ndc, camera);
-    const hits = raycaster.intersectObject(logoMesh, false);
-    if (hits.length) {
-      ev.preventDefault();
-      ev.stopImmediatePropagation();
-      pendingLogo = { x: ev.clientX, y: ev.clientY, t: performance.now() };
-      renderer.domElement.setPointerCapture?.(ev.pointerId);
-      return;
-    }
+  // Logo on ANY machine triggers explosion.
+  if (!explosionStarted && logoMeshAt(ev)) {
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    pendingLogo = { x: ev.clientX, y: ev.clientY, t: performance.now() };
+    renderer.domElement.setPointerCapture?.(ev.pointerId);
+    return;
   }
   const inst = keycapAt(ev);
   if (!inst) return;
@@ -992,24 +1091,20 @@ function releaseKey(ev: PointerEvent) {
   renderer.domElement.releasePointerCapture?.(ev.pointerId);
   if (Math.hypot(dx, dy) <= CLICK_RADIUS && dt <= CLICK_TIME) {
     animatePress(inst.mesh, inst.restY);
-    dispatchToTerminal(inst.def);
+    dispatchToTerminal(inst.def, inst.machineIdx);
   }
 }
 renderer.domElement.addEventListener("pointerup", releaseKey);
 renderer.domElement.addEventListener("pointercancel", releaseKey);
 
-// Hover → pointer cursor over keycaps or the logo.
+// Hover → pointer cursor over keycaps or any logo.
 let hoverThrottle = 0;
 renderer.domElement.addEventListener("pointermove", (ev) => {
   const now = performance.now();
   if (now - hoverThrottle < 50) return;
   hoverThrottle = now;
   let pointer = !!keycapAt(ev);
-  if (!pointer && logoMesh && !explosionStarted) {
-    setNdc(ev);
-    raycaster.setFromCamera(ndc, camera);
-    pointer = raycaster.intersectObject(logoMesh, false).length > 0;
-  }
+  if (!pointer && !explosionStarted) pointer = !!logoMeshAt(ev);
   renderer.domElement.style.cursor = pointer ? "pointer" : "";
 });
 
@@ -1058,33 +1153,36 @@ function startExplosion() {
   shakeStrength = 1;
   controls.enabled = false;
 
-  const center = new THREE.Vector3(0, 4.5, 1.5);
   const worldPos = new THREE.Vector3();
-  for (const child of terminal.children.slice()) {
-    child.getWorldPosition(worldPos);
-    const dir = worldPos.clone().sub(center);
-    if (dir.lengthSq() < 0.001) dir.set(0, 1, 0);
-    dir.normalize(); // <-- key fix: unit direction, not raw offset
+  // Each machine scatters around its own center so the explosion looks like
+  // multiple synchronized detonations rather than one giant outward push.
+  for (const m of machines) {
+    const mc = new THREE.Vector3();
+    m.group.getWorldPosition(mc);
+    mc.add(new THREE.Vector3(0, 4.5, 1.5));
+    for (const child of m.group.children.slice()) {
+      child.getWorldPosition(worldPos);
+      const dir = worldPos.clone().sub(mc);
+      if (dir.lengthSq() < 0.001) dir.set(0, 1, 0);
+      dir.normalize();
 
-    // Big parts (case, hood) tumble slower than small parts (keys, leds).
-    const size = approxSize(child);
-    const big = size > 3;
-    const baseSpeed = big ? 3.5 : 7.5;
-    const speed = baseSpeed + Math.random() * 2.5;
+      const size = approxSize(child);
+      const big = size > 3;
+      const baseSpeed = big ? 3.5 : 7.5;
+      const speed = baseSpeed + Math.random() * 2.5;
 
-    debris.push({
-      obj: child,
-      vx: dir.x * speed + (Math.random() - 0.5) * 2,
-      vy: 5 + Math.random() * 3 + dir.y * speed * 0.35, // upward bias for everything
-      vz: dir.z * speed + (Math.random() - 0.5) * 2,
-      avx: (Math.random() - 0.5) * (big ? 3 : 10),
-      avy: (Math.random() - 0.5) * (big ? 3 : 10),
-      avz: (Math.random() - 0.5) * (big ? 3 : 10),
-    });
+      debris.push({
+        obj: child,
+        vx: dir.x * speed + (Math.random() - 0.5) * 2,
+        vy: 5 + Math.random() * 3 + dir.y * speed * 0.35,
+        vz: dir.z * speed + (Math.random() - 0.5) * 2,
+        avx: (Math.random() - 0.5) * (big ? 3 : 10),
+        avy: (Math.random() - 0.5) * (big ? 3 : 10),
+        avz: (Math.random() - 0.5) * (big ? 3 : 10),
+      });
+    }
   }
 
-  // Debris peaks around t≈0.6s, starts falling, lands ~2s. Reward at 1.9s
-  // so the user sees the arc + landing before the boot screen takes over.
   setTimeout(showEasterEgg, 1900);
 }
 
