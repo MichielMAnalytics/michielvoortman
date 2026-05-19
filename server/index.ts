@@ -63,9 +63,15 @@ http.on("upgrade", (req, socket, head) => {
   });
 });
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
   let pty: IPty | null = null;
   let killed = false;
+
+  // Read ?nobanner=1 from the upgrade URL — when set, the spawned shell
+  // skips its boot banner so the parent iframe can pre-hydrate the screen
+  // with a snapshot of the source PTY (used by the "fork" command).
+  const upgradeUrl = new URL(req.url ?? "/", "http://localhost");
+  const noBanner = upgradeUrl.searchParams.get("nobanner") === "1";
 
   ws.on("message", (raw) => {
     let msg: { type: string; data?: string; cols?: number; rows?: number };
@@ -82,7 +88,11 @@ wss.on("connection", (ws) => {
             cols: msg.cols,
             rows: msg.rows,
             cwd: process.cwd(),
-            env: { ...process.env, TERM: "xterm-256color" },
+            env: {
+              ...process.env,
+              TERM: "xterm-256color",
+              ...(noBanner ? { PORTFOLIO_NOBANNER: "1" } : {}),
+            },
           });
         } catch (err) {
           console.error("[pty] spawn failed:", err);

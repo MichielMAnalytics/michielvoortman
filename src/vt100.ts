@@ -687,31 +687,33 @@ const PIXELS_PER_UNIT = 90;
 const iframePxW = Math.round(SCREEN_W * PIXELS_PER_UNIT);
 const iframePxH = Math.round(SCREEN_H * PIXELS_PER_UNIT);
 
-const screenWrapper = document.createElement("div");
-screenWrapper.style.width = `${iframePxW}px`;
-screenWrapper.style.height = `${iframePxH}px`;
-screenWrapper.style.background = "#000";
-screenWrapper.style.overflow = "hidden";
-screenWrapper.style.position = "relative";
-screenWrapper.style.borderRadius = "16px";
-screenWrapper.style.boxShadow =
-  "inset 0 0 80px rgba(0,0,0,0.9), inset 0 0 240px rgba(140,255,180,0.05)";
+type ScreenHandle = {
+  wrapper: HTMLDivElement;
+  iframe: HTMLIFrameElement;
+  css3d: CSS3DObject;
+};
 
-const ptyIframe = document.createElement("iframe");
-ptyIframe.src = "/term";
-ptyIframe.style.width = "100%";
-ptyIframe.style.height = "100%";
-ptyIframe.style.border = "0";
-ptyIframe.style.display = "block";
-ptyIframe.title = "michielvoortman portfolio terminal";
-ptyIframe.addEventListener("load", () => {
-  loading.classList.add("hidden");
-  setTimeout(() => loading.remove(), 600);
-  try { ptyIframe.contentWindow?.focus(); } catch {}
-});
-screenWrapper.appendChild(ptyIframe);
+function buildScreen(src: string, title: string, onLoad?: () => void): ScreenHandle {
+  const wrapper = document.createElement("div");
+  wrapper.style.width = `${iframePxW}px`;
+  wrapper.style.height = `${iframePxH}px`;
+  wrapper.style.background = "#000";
+  wrapper.style.overflow = "hidden";
+  wrapper.style.position = "relative";
+  wrapper.style.borderRadius = "16px";
+  wrapper.style.boxShadow =
+    "inset 0 0 80px rgba(0,0,0,0.9), inset 0 0 240px rgba(140,255,180,0.05)";
 
-{
+  const iframe = document.createElement("iframe");
+  iframe.src = src;
+  iframe.style.width = "100%";
+  iframe.style.height = "100%";
+  iframe.style.border = "0";
+  iframe.style.display = "block";
+  iframe.title = title;
+  if (onLoad) iframe.addEventListener("load", onLoad);
+  wrapper.appendChild(iframe);
+
   const scan = document.createElement("div");
   scan.style.position = "absolute";
   scan.style.inset = "0";
@@ -719,7 +721,7 @@ screenWrapper.appendChild(ptyIframe);
   scan.style.background =
     "repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px, rgba(0,0,0,0.12) 3px, rgba(0,0,0,0) 4px)";
   scan.style.mixBlendMode = "multiply";
-  screenWrapper.appendChild(scan);
+  wrapper.appendChild(scan);
 
   const vignette = document.createElement("div");
   vignette.style.position = "absolute";
@@ -727,19 +729,116 @@ screenWrapper.appendChild(ptyIframe);
   vignette.style.pointerEvents = "none";
   vignette.style.background =
     "radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.55) 100%)";
-  screenWrapper.appendChild(vignette);
+  wrapper.appendChild(vignette);
 
-  const screen = new CSS3DObject(screenWrapper);
+  const css3d = new CSS3DObject(wrapper);
   const s = 1 / PIXELS_PER_UNIT;
-  screen.scale.set(s, s, s);
-  screen.position.set(0, SCREEN_Y, SCREEN_Z);
-  // Attach to terminal group (not the scene root) so it scatters with the
-  // rest of the unit during the easter-egg explosion.
-  terminal.add(screen);
+  css3d.scale.set(s, s, s);
+  css3d.position.set(0, SCREEN_Y, SCREEN_Z);
 
-  screenWrapper.addEventListener("mousedown", () => {
-    try { ptyIframe.contentWindow?.focus(); } catch {}
+  wrapper.addEventListener("mousedown", () => {
+    try { iframe.contentWindow?.focus(); } catch {}
   });
+
+  return { wrapper, iframe, css3d };
+}
+
+const sourceScreen = buildScreen("/term", "michielvoortman portfolio terminal", () => {
+  loading.classList.add("hidden");
+  setTimeout(() => loading.remove(), 600);
+  try { sourceScreen.iframe.contentWindow?.focus(); } catch {}
+});
+const ptyIframe = sourceScreen.iframe;
+const screenWrapper = sourceScreen.wrapper;
+terminal.add(sourceScreen.css3d);
+
+// ---------- Fork easter command: clone the entire VM next to the source ----------
+let forkStarted = false;
+
+type ChildBridge = {
+  __sendInput?: (d: string) => void;
+  __getBuffer?: () => string;
+  __hydrate?: (text: string) => void;
+};
+
+window.addEventListener("message", (ev) => {
+  if (!ev.data || ev.data.type !== "boxd-fork") return;
+  if (forkStarted || explosionStarted) return;
+  forkStarted = true;
+  doFork();
+});
+
+function findCSS3DObject(root: THREE.Object3D): CSS3DObject | null {
+  let found: CSS3DObject | null = null;
+  root.traverse((o) => {
+    if (!found && (o as CSS3DObject).isObject3D && (o as CSS3DObject).element instanceof HTMLElement) {
+      // CSS3DObject doesn't expose a stable type guard; the `element` prop is the tell.
+      if ((o as { isCSS3DObject?: boolean }).isCSS3DObject || o.constructor.name === "CSS3DObject") {
+        found = o as CSS3DObject;
+      }
+    }
+  });
+  return found;
+}
+
+function doFork() {
+  // 1. Snapshot the source PTY screen via the bridge exposed by main.ts.
+  const win = ptyIframe.contentWindow as unknown as ChildBridge | null;
+  const snapshot = win?.__getBuffer?.() ?? "";
+
+  // 2. Deep-clone the entire terminal Object3D tree. CSS3DObject's `.element`
+  // is shared by reference after clone, so we hunt it down in the clone and
+  // replace it with a fresh screen+iframe.
+  const cloneRoot = terminal.clone(true);
+  const staleScreen = findCSS3DObject(cloneRoot);
+  if (staleScreen && staleScreen.parent) staleScreen.parent.remove(staleScreen);
+
+  // 3. Spawn a banner-less clone iframe and hydrate it once its bridge appears.
+  const cloneScreen = buildScreen("/term?nobanner=1", "forked terminal", () => {
+    const tryHydrate = (attempts = 0) => {
+      const cw = cloneScreen.iframe.contentWindow as unknown as ChildBridge | null;
+      if (cw?.__hydrate) {
+        cw.__hydrate(snapshot);
+      } else if (attempts < 40) {
+        setTimeout(() => tryHydrate(attempts + 1), 50);
+      }
+    };
+    tryHydrate();
+  });
+  cloneRoot.add(cloneScreen.css3d);
+  scene.add(cloneRoot);
+
+  // 4. Slide the source left, clone right, with a brief animation.
+  const SLIDE = 8.5;
+  const start = performance.now();
+  const DURATION = 900;
+
+  // 5. Pan camera out to frame both terminals.
+  const camFrom = camera.position.clone();
+  const camTo = new THREE.Vector3(0, 11, 40);
+  const tgtFrom = controls.target.clone();
+  const tgtTo = new THREE.Vector3(0, 4.5, 0);
+
+  // Relax orbit clamps now that there's more to look at.
+  controls.minAzimuthAngle = -Math.PI * 0.65;
+  controls.maxAzimuthAngle = Math.PI * 0.65;
+  controls.minDistance = 20;
+  controls.maxDistance = 70;
+
+  function easeInOut(t: number): number {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+
+  function animateFork() {
+    const t = Math.min(1, (performance.now() - start) / DURATION);
+    const k = easeInOut(t);
+    terminal.position.x = -SLIDE * k;
+    cloneRoot.position.x = SLIDE * k;
+    camera.position.lerpVectors(camFrom, camTo, k);
+    controls.target.lerpVectors(tgtFrom, tgtTo, k);
+    if (t < 1) requestAnimationFrame(animateFork);
+  }
+  animateFork();
 }
 
 // ---------- Keyboard plumbing ----------

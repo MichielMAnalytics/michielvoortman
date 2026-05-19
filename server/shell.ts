@@ -684,6 +684,23 @@ const commands: Record<string, Cmd> = {
   },
   clear: { name: "clear", desc: "clear the screen", run: () => CLEAR_SCREEN },
 
+  // ── easter egg: fork the entire machine ──
+  // Emits a private OSC sequence the iframe parses to trigger the 3D clone.
+  // The marker is wrapped in OSC 1337 (iTerm's "proprietary" range) so it
+  // never collides with anything xterm renders.
+  fork: {
+    name: "fork",
+    desc: "fork this VM (boxd-style)",
+    run: () => {
+      const marker = "\x1b]1337;boxd-fork\x07";
+      return (
+        marker +
+        `${DIM}forking machine...${RESET}\n` +
+        `${BOLD}[fork complete]${RESET} — same state, new memory.\n`
+      );
+    },
+  },
+
   // ── portfolio shortcuts (also browsable as files) ──
   about: { name: "about", desc: "who I am  (~/about.txt)", run: portfolio(aboutText) },
   projects: { name: "projects", desc: "what I'm building  (~/projects/)", run: portfolio(projectsText) },
@@ -702,6 +719,7 @@ const commands: Record<string, Cmd> = {
         "pwd", "ls", "cd", "cat", "tree",
         "whoami", "echo", "date", "uname", "history", "clear",
         "about", "projects", "experience", "education", "awards", "contact", "cv",
+        "fork",
         "help",
       ];
       const rows = order.map((n) => {
@@ -836,7 +854,15 @@ const BANNER = [
   "",
 ].join("\n");
 
-process.stdout.write(CLEAR_SCREEN + BANNER + prompt());
+// PORTFOLIO_NOBANNER=1 → start silent and emit only a prompt. Used when the
+// shell is spawned as a "forked" session: the parent iframe pre-hydrates
+// xterm with a snapshot of the source terminal so the user sees an instant
+// twin. Skipping the banner here keeps both screens visually identical.
+if (process.env.PORTFOLIO_NOBANNER === "1") {
+  process.stdout.write(prompt());
+} else {
+  process.stdout.write(CLEAR_SCREEN + BANNER + prompt());
+}
 
 let line = "";
 let histIdx = -1;

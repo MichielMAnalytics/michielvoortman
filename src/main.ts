@@ -34,9 +34,22 @@ const el = document.getElementById("term")!;
 term.open(el);
 fit.fit();
 
+const query = new URLSearchParams(location.search);
+const noBanner = query.get("nobanner") === "1";
+
 const proto = location.protocol === "https:" ? "wss" : "ws";
-const ws = new WebSocket(`${proto}://${location.host}/pty`);
+const wsUrl = `${proto}://${location.host}/pty${noBanner ? "?nobanner=1" : ""}`;
+const ws = new WebSocket(wsUrl);
 ws.binaryType = "arraybuffer";
+
+// Private OSC sequence emitted by the shell's `fork` command. We strip it
+// from the on-screen output and notify the parent (the 3D /vt100 viewer).
+const FORK_MARKER = "\x1b]1337;boxd-fork\x07";
+function intercept(data: string): string {
+  if (!data.includes(FORK_MARKER)) return data;
+  try { window.parent?.postMessage({ type: "boxd-fork" }, "*"); } catch {}
+  return data.split(FORK_MARKER).join("");
+}
 
 ws.onopen = () => {
   send({ type: "resize", cols: term.cols, rows: term.rows });
@@ -44,14 +57,12 @@ ws.onopen = () => {
 
 ws.onmessage = (ev) => {
   if (typeof ev.data === "string") {
-    term.write(ev.data);
+    term.write(intercept(ev.data));
   } else {
-    term.write(new Uint8Array(ev.data));
+    // Binary frame → decode as utf-8 so we can sniff for the fork marker.
+    const text = new TextDecoder().decode(new Uint8Array(ev.data));
+    term.write(intercept(text));
   }
-  // Always keep the prompt in view. xterm normally auto-scrolls on write, but
-  // when the terminal is iframed inside a clipped/shadowed CRT we need to be
-  // explicit — otherwise mobile users don't see their keystrokes until the
-  // next line break scrolls the prompt up into the visible area.
   term.scrollToBottom();
 };
 
@@ -71,10 +82,40 @@ function send(msg: object) {
 
 // Exposed for the 3D /vt100 viewer: lets the parent send raw input bytes
 // (e.g. "\r" for Return) without going through synthetic KeyboardEvents.
-(window as unknown as { __sendInput: (d: string) => void }).__sendInput = (d) => {
+type Bridge = {
+  __sendInput: (d: string) => void;
+  __getBuffer: () => string;
+  __hydrate: (text: string) => void;
+};
+const bridge = window as unknown as Bridge;
+bridge.__sendInput = (d) => {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "input", data: d }));
   }
+};
+
+// Return the textual snapshot of every non-empty line in the active buffer,
+// joined with CRLFs. Used by the fork command to seed the clone terminal.
+bridge.__getBuffer = () => {
+  const buf = term.buffer.active;
+  const lines: string[] = [];
+  // Walk from the top of the scrollback through the visible viewport.
+  const total = buf.length;
+  for (let y = 0; y < total; y++) {
+    const line = buf.getLine(y);
+    if (!line) continue;
+    lines.push(line.translateToString(true));
+  }
+  // Trim trailing empty lines so the clone's prompt sits right where the
+  // source's does, not at the bottom of the buffer.
+  while (lines.length && lines[lines.length - 1] === "") lines.pop();
+  return lines.join("\r\n") + "\r\n";
+};
+
+// Write hydration text into xterm before / alongside the live PTY stream.
+bridge.__hydrate = (text) => {
+  term.write(text);
+  term.scrollToBottom();
 };
 
 window.addEventListener("resize", () => {
