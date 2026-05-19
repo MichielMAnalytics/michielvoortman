@@ -48,6 +48,11 @@ ws.onmessage = (ev) => {
   } else {
     term.write(new Uint8Array(ev.data));
   }
+  // Always keep the prompt in view. xterm normally auto-scrolls on write, but
+  // when the terminal is iframed inside a clipped/shadowed CRT we need to be
+  // explicit — otherwise mobile users don't see their keystrokes until the
+  // next line break scrolls the prompt up into the visible area.
+  term.scrollToBottom();
 };
 
 ws.onclose = () => {
@@ -75,4 +80,5 @@ function send(msg: object) {
 window.addEventListener("resize", () => {
   fit.fit();
   send({ type: "resize", cols: term.cols, rows: term.rows });
+  term.scrollToBottom();
 });

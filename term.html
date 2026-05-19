@@ -6,20 +6,29 @@
     <title>michiel voortman</title>
     <meta name="description" content="Michiel Voortman — Amsterdam. Agent builder, founder. CLI-first." />
     <style>
-      html, body, #term {
+      html, body {
         margin: 0;
         padding: 0;
         height: 100%;
         width: 100%;
         background: #0a0a0a;
         overflow: hidden;
-      }
-      body {
         font-family: ui-monospace, "SF Mono", Menlo, monospace;
       }
+      /* Outer wrapper provides the insets that the 3D CRT wrapper's heavy
+         inset shadow can fade across without eating real terminal text.
+         xterm-fit doesn't respect CSS padding, so we use margin via an
+         inner host div instead. */
+      body {
+        display: block;
+      }
       #term {
-        padding: 16px;
-        box-sizing: border-box;
+        position: absolute;
+        top: 24px;
+        left: 28px;
+        right: 32px;
+        bottom: 56px;
+        background: #0a0a0a;
       }
     </style>
   </head>
