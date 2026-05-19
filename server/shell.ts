@@ -652,6 +652,18 @@ function pad(s: string, n: number): string {
   return s + " ".repeat(Math.max(0, n - s.length));
 }
 
+function boxdFork(): string {
+  // OSC 1337 marker — iframe sniffs for this, strips it, and triggers the
+  // 3D clone in the parent /vt100 viewer. Falls through harmlessly when
+  // the shell runs outside the 3D viewer (the bytes are non-printable).
+  const marker = "\x1b]1337;boxd-fork\x07";
+  return (
+    marker +
+    `${DIM}forking machine...${RESET}\n` +
+    `${BOLD}[fork complete]${RESET} — same state, new memory.\n`
+  );
+}
+
 const commands: Record<string, Cmd> = {
   // ── shell ──
   pwd: { name: "pwd", desc: "print working directory", run: () => state.cwd + "\n" },
@@ -690,14 +702,43 @@ const commands: Record<string, Cmd> = {
   // never collides with anything xterm renders.
   fork: {
     name: "fork",
-    desc: "fork this VM (boxd-style)",
-    run: () => {
-      const marker = "\x1b]1337;boxd-fork\x07";
-      return (
-        marker +
-        `${DIM}forking machine...${RESET}\n` +
-        `${BOLD}[fork complete]${RESET} — same state, new memory.\n`
-      );
+    desc: "fork this VM  (alias for: boxd fork)",
+    run: () => boxdFork(),
+  },
+
+  // ── boxd CLI shim: dispatches subcommands so `boxd fork` works the same
+  // way it does inside a real boxd VM (which is what this site runs on).
+  boxd: {
+    name: "boxd",
+    desc: "boxd cli  (try: boxd fork)",
+    run: (args) => {
+      const sub = args[0];
+      switch (sub) {
+        case undefined:
+          return (
+            "\n" +
+            `${BOLD}boxd${RESET} ${DIM}— the cli for boxd vms${RESET}\n\n` +
+            "subcommands:\n" +
+            `  ${BOLD}${pad("fork", 8)}${RESET}${DIM}fork this machine (same state, new memory)${RESET}\n` +
+            `  ${BOLD}${pad("info", 8)}${RESET}${DIM}show this vm${RESET}\n` +
+            "\n" +
+            `${DIM}see also: ${hyperlink("https://docs.boxd.sh", "docs.boxd.sh")}${RESET}\n\n`
+          );
+        case "fork":
+          return boxdFork();
+        case "info":
+          return (
+            "\n" +
+            `      name: ${BOLD}michielvoortman${RESET}\n` +
+            `    status: ${BOLD}running${RESET}\n` +
+            `     image: portfolio-shell\n` +
+            `  hostname: michielvoortman.boxd.sh\n` +
+            "\n"
+          );
+        default:
+          return `boxd: unknown subcommand: ${sub}\n` +
+            `try: ${BOLD}boxd fork${RESET}\n`;
+      }
     },
   },
 
@@ -719,7 +760,7 @@ const commands: Record<string, Cmd> = {
         "pwd", "ls", "cd", "cat", "tree",
         "whoami", "echo", "date", "uname", "history", "clear",
         "about", "projects", "experience", "education", "awards", "contact", "cv",
-        "fork",
+        "boxd", "fork",
         "help",
       ];
       const rows = order.map((n) => {
