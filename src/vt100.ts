@@ -188,6 +188,59 @@ const HOOD_H = 1.7;
   terminal.add(overhang);
 }
 
+// Back-of-case details — vents + a small embossed model plate so the rear
+// doesn't look like a flat slab when the user orbits all the way around.
+{
+  const ventMat = new THREE.MeshStandardMaterial({
+    color: 0x2a2924,
+    roughness: 0.85,
+    metalness: 0.05,
+  });
+  // A horizontal louvre grille on the back, centered, with multiple slats.
+  const SLAT_COUNT = 18;
+  const SLAT_GAP = 0.16;
+  const SLAT_W = MON_W * 0.62;
+  const SLAT_H = 0.05;
+  const SLAT_D = 0.02;
+  const totalSlatH = SLAT_COUNT * (SLAT_H + SLAT_GAP) - SLAT_GAP;
+  const ventY = 1.0 + (MON_H - HOOD_H) / 2;
+  for (let i = 0; i < SLAT_COUNT; i++) {
+    const slat = new THREE.Mesh(
+      new THREE.BoxGeometry(SLAT_W, SLAT_H, SLAT_D),
+      ventMat,
+    );
+    slat.position.set(
+      0,
+      ventY - totalSlatH / 2 + i * (SLAT_H + SLAT_GAP),
+      -MON_D / 2 - 0.10, // outside the body bevel (~0.06)
+    );
+    slat.castShadow = false;
+    slat.receiveShadow = true;
+    terminal.add(slat);
+  }
+
+  // Tiny rear nameplate "BC-BS 20768" — matches the silver plate on a real VT100.
+  const c = document.createElement("canvas");
+  c.width = 512; c.height = 96;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#bcbcbc";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = "#1a1a1a";
+  ctx.font = "bold 40px ui-monospace, 'SF Mono', Menlo, monospace";
+  ctx.textBaseline = "middle";
+  ctx.fillText("BC-BS 20768", 32, c.height / 2);
+  const plateTex = new THREE.CanvasTexture(c);
+  plateTex.colorSpace = THREE.SRGBColorSpace;
+  const plate = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.4, 0.26),
+    new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.5, metalness: 0.4 }),
+  );
+  // Face -Z (back), positioned low-right on the back.
+  plate.rotation.y = Math.PI;
+  plate.position.set(MON_W / 2 - 1.1, 1.0 + 0.7, -MON_D / 2 - 0.10);
+  terminal.add(plate);
+}
+
 // CRT front bezel — recessed dark plastic surrounding the screen.
 // Sits in the lower-middle of the front face, below the hood.
 const BEZ_W = 8.2;
@@ -915,13 +968,13 @@ function doFork(src: Machine) {
   const tgtFrom = controls.target.clone();
   const tgtTo = new THREE.Vector3(0, 4.5, 0);
 
-  // Keep the camera in front of the unit even with multiple machines.
-  // Beyond ~75° from front the user would see the CSS3D screens from
-  // behind (which renders mirrored text — looks broken).
-  controls.minAzimuthAngle = -Math.PI * 0.42;
-  controls.maxAzimuthAngle = Math.PI * 0.42;
-  controls.minPolarAngle = Math.PI * 0.20;
-  controls.maxPolarAngle = Math.PI * 0.50; // never below horizon
+  // Allow full 360° orbit now that the back of the case is modeled and the
+  // CSS3D screens hide themselves when viewed from behind (see tickScreens
+  // in the animation loop).
+  controls.minAzimuthAngle = -Infinity;
+  controls.maxAzimuthAngle = Infinity;
+  controls.minPolarAngle = Math.PI * 0.10;
+  controls.maxPolarAngle = Math.PI * 0.55;
   controls.minDistance = 20;
   controls.maxDistance = Math.max(70, distance + 30);
 
@@ -1375,10 +1428,12 @@ controls.dampingFactor = 0.08;
 controls.target.set(0, 4.5, 1.5);
 controls.minDistance = 16;
 controls.maxDistance = 42;
-controls.minPolarAngle = Math.PI * 0.18;
+controls.minPolarAngle = Math.PI * 0.10;
 controls.maxPolarAngle = Math.PI * 0.55;
-controls.minAzimuthAngle = -Math.PI * 0.35;
-controls.maxAzimuthAngle = Math.PI * 0.35;
+// Full 360° orbit — back of case is modeled (vents + nameplate) and CSS3D
+// screens hide themselves when the camera is behind them (tickScreens).
+controls.minAzimuthAngle = -Infinity;
+controls.maxAzimuthAngle = Infinity;
 controls.enablePan = false;
 
 // ---------- Resize ----------
@@ -1394,16 +1449,39 @@ window.addEventListener("resize", onResize);
 
 // ---------- Animate ----------
 const explosionClock = new THREE.Clock();
+const _screenPos = new THREE.Vector3();
+const _screenQuat = new THREE.Quaternion();
+const _screenFwd = new THREE.Vector3();
+const _toCamera = new THREE.Vector3();
+
+// Hide each CSS3D iframe when the camera moves behind it. CSS3DObjects are
+// rendered by a separate DOM-based renderer that ignores WebGL depth, so
+// without this they'd punch through the case from the back and show as
+// mirrored text. Setting `object.visible = false` makes CSS3DRenderer skip
+// it entirely.
+function tickScreens() {
+  for (const m of machines) {
+    const screen = findCSS3DObject(m.group);
+    if (!screen) continue;
+    screen.getWorldPosition(_screenPos);
+    screen.getWorldQuaternion(_screenQuat);
+    _screenFwd.set(0, 0, 1).applyQuaternion(_screenQuat);
+    _toCamera.subVectors(camera.position, _screenPos);
+    // Positive dot → camera is in front of the screen plane.
+    screen.visible = _screenFwd.dot(_toCamera) > 0;
+  }
+}
+
 function tick() {
   const now = performance.now();
   const dt = Math.min(0.05, explosionClock.getDelta());
   tickPress(now);
   tickExplosion(dt);
   controls.update();
-  // Apply camera shake on top of OrbitControls' result.
   if (shakeOffset.lengthSq() > 0) {
     camera.position.add(shakeOffset);
   }
+  tickScreens();
   renderer.render(scene, camera);
   cssRenderer.render(scene, camera);
   requestAnimationFrame(tick);
