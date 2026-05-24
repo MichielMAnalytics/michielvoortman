@@ -1401,12 +1401,53 @@ function showEasterEgg() {
   let lineIdx = 0;
   function typeNextLine() {
     if (lineIdx >= lines.length) {
-      // Link is part of the rendered text — replace it with a clickable anchor.
+      // Link is part of the rendered text — replace it with a clickable anchor
+      // that ALSO copies itself to the clipboard on click and flashes "copied".
       pre.innerHTML = pre.textContent!.replace(
         /https:\/\/calendar\.app\.google\/[A-Za-z0-9]+/,
         (m) =>
-          `<a href="${m}" target="_blank" rel="noopener" style="color:#a4ffd0;text-decoration:underline;text-shadow:inherit">${m}</a>`,
+          `<a id="reward-link" href="${m}" target="_blank" rel="noopener" style="color:#a4ffd0;text-decoration:underline;text-shadow:inherit">${m}</a>`,
       );
+
+      const link = overlay.querySelector("#reward-link") as HTMLAnchorElement | null;
+      if (link) {
+        link.addEventListener("click", (ev) => {
+          // Don't trigger the overlay-click-resets handler below.
+          ev.stopPropagation();
+          const url = link.href;
+          // Best-effort copy (async clipboard API in modern browsers; fall
+          // back to a hidden textarea for older ones). Don't block the
+          // anchor's default open-in-new-tab — we want both.
+          const copy = async () => {
+            try {
+              await navigator.clipboard.writeText(url);
+            } catch {
+              const ta = document.createElement("textarea");
+              ta.value = url;
+              ta.style.position = "fixed";
+              ta.style.opacity = "0";
+              document.body.appendChild(ta);
+              ta.select();
+              try { document.execCommand("copy"); } catch {}
+              ta.remove();
+            }
+          };
+          copy();
+
+          // Flash a "copied!" toast next to the link.
+          const toast = document.createElement("span");
+          toast.textContent = " copied ✓";
+          toast.style.cssText =
+            "color:#ffe27c;margin-left:0.5em;opacity:0;transition:opacity 200ms ease";
+          link.insertAdjacentElement("afterend", toast);
+          requestAnimationFrame(() => (toast.style.opacity = "1"));
+          setTimeout(() => {
+            toast.style.opacity = "0";
+            setTimeout(() => toast.remove(), 250);
+          }, 1400);
+        });
+      }
+
       // Blinking cursor
       const cursor = pre.querySelector(":scope") as HTMLElement | null;
       if (cursor) cursor.style.animation = "blink 1s steps(2) infinite";
