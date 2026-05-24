@@ -1471,6 +1471,107 @@ function showEasterEgg() {
 }
 
 // Debug handle so test harnesses can find keycap positions.
+// ---------- "try: boxd fork" chip click → animated command transfer ----------
+// On click the chip ignites, then each character of "boxd fork" launches as a
+// glowing glyph along a curved trajectory from the chip up into the CRT
+// prompt. The character is sent to the PTY the moment its glyph lands — so
+// the shell's echo materialises at the same instant the visual disappears
+// into the screen. A short pause, then Enter, then the fork runs.
+(function wireForkChip() {
+  const chip = document.querySelector(".hud-fork-chip") as HTMLElement | null;
+  if (!chip) return;
+  let fired = false;
+
+  chip.addEventListener("click", (ev) => {
+    if (fired || explosionStarted) return;
+    fired = true;
+    ev.stopPropagation();
+    chip.classList.add("firing");
+    // Fade the chip away during the launch — once clicked, it's "spent".
+    setTimeout(() => chip.classList.add("taken"), 240);
+    runForkAnimation();
+  });
+
+  function runForkAnimation() {
+    const cmd = "boxd fork";
+    const STAGGER = 70;   // ms between consecutive glyph launches
+    const FLIGHT = 380;   // ms per glyph in the air
+    const POST_PAUSE = 420; // ms after the last glyph lands → Enter
+
+    const chipRect = chip!.getBoundingClientRect();
+    // We compute the iframe rect ONCE — but the source iframe lives in a 3D
+    // CSS3DObject, so its on-screen rect comes from getBoundingClientRect.
+    const ifRect = sourceScreen.iframe.getBoundingClientRect();
+
+    const startX = chipRect.left + chipRect.width * 0.5;
+    const startY = chipRect.top + chipRect.height * 0.5;
+    // Aim near the prompt cursor — bottom-left quadrant of the CRT plane.
+    const targetX = ifRect.left + ifRect.width * 0.18;
+    const targetY = ifRect.top + ifRect.height * 0.78;
+
+    for (let i = 0; i < cmd.length; i++) {
+      setTimeout(
+        () => spawnGlyph(cmd[i], startX, startY, targetX, targetY, FLIGHT),
+        i * STAGGER,
+      );
+    }
+
+    const totalSpawn = (cmd.length - 1) * STAGGER + FLIGHT;
+    setTimeout(() => {
+      const w = sourceScreen.iframe.contentWindow as unknown as {
+        __sendInput?: (s: string) => void;
+      } | null;
+      w?.__sendInput?.("\r");
+    }, totalSpawn + POST_PAUSE);
+  }
+
+  function spawnGlyph(
+    ch: string,
+    sx: number,
+    sy: number,
+    tx: number,
+    ty: number,
+    flightMs: number,
+  ) {
+    const span = document.createElement("span");
+    span.textContent = ch === " " ? " " : ch;
+    span.className = "fork-glyph";
+    document.body.appendChild(span);
+
+    // Slight per-glyph jitter so the stream doesn't read as mechanical.
+    const jitterX = (Math.random() - 0.5) * 24;
+    const jitterY = (Math.random() - 0.5) * 18;
+    // Arc control point: above the straight line, biased toward midpoint.
+    const midX = (sx + tx) / 2 + jitterX;
+    const midY = Math.min(sy, ty) - 120 + jitterY;
+
+    const anim = span.animate(
+      [
+        // Burst out from the chip
+        { transform: `translate(${sx}px, ${sy}px) scale(0.55)`,
+          opacity: 0, color: "#ffe27c" },
+        // Reach full size just past launch
+        { transform: `translate(${sx}px, ${sy}px) scale(1.05)`,
+          opacity: 1, color: "#ffe27c", offset: 0.12 },
+        // Peak of the arc — energetic, slightly oversized
+        { transform: `translate(${midX}px, ${midY}px) scale(1.25)`,
+          opacity: 1, color: "#fff0a8", offset: 0.55 },
+        // Land at the prompt, color-shifted to phosphor green
+        { transform: `translate(${tx}px, ${ty}px) scale(0.85)`,
+          opacity: 0, color: "#7cffae" },
+      ],
+      { duration: flightMs, easing: "cubic-bezier(0.65, 0, 0.35, 1)", fill: "forwards" },
+    );
+    anim.onfinish = () => {
+      span.remove();
+      const w = sourceScreen.iframe.contentWindow as unknown as {
+        __sendInput?: (s: string) => void;
+      } | null;
+      w?.__sendInput?.(ch);
+    };
+  }
+})();
+
 (window as unknown as { __vt100: unknown }).__vt100 = {
   keycaps, camera, renderer, raycaster,
   get logoMesh() { return logoMesh; },
