@@ -869,10 +869,24 @@ function findLogoMesh(root: THREE.Object3D): THREE.Mesh | null {
 // Source machine — terminal group already in the scene, logo created
 // asynchronously by the SVG fetch above.
 const sourceScreen = buildScreen("/term", "michielvoortman portfolio terminal", () => {
-  loading.classList.add("hidden");
-  setTimeout(() => loading.remove(), 600);
   try { sourceScreen.iframe.contentWindow?.focus(); } catch {}
 });
+
+// Hide the "BOOTING VT100…" overlay only once the PTY has actually rendered
+// its boot banner. main.ts posts a 'pty-ready' message after the first WS
+// data lands. Fallback at 5s in case the WebSocket can't reach the server.
+function dismissLoadingOverlay() {
+  if (!loading || loading.dataset.hidden === "1") return;
+  loading.dataset.hidden = "1";
+  loading.classList.add("hidden");
+  setTimeout(() => loading.remove(), 600);
+}
+window.addEventListener("message", (ev) => {
+  if (ev.data?.type === "pty-ready" && ev.source === sourceScreen.iframe.contentWindow) {
+    dismissLoadingOverlay();
+  }
+});
+setTimeout(dismissLoadingOverlay, 5000);
 const ptyIframe = sourceScreen.iframe;
 const screenWrapper = sourceScreen.wrapper;
 terminal.add(sourceScreen.css3d);

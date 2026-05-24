@@ -61,6 +61,7 @@ ws.onopen = () => {
   send({ type: "resize", cols: term.cols, rows: term.rows });
 };
 
+let ptyReadyEmitted = false;
 ws.onmessage = (ev) => {
   const text =
     typeof ev.data === "string"
@@ -70,6 +71,12 @@ ws.onmessage = (ev) => {
   rawHistory += cleaned;
   term.write(cleaned);
   term.scrollToBottom();
+  // Tell the parent /vt100 viewer that the PTY has streamed something
+  // renderable so it can hide its loading overlay at the exact right moment.
+  if (!ptyReadyEmitted) {
+    ptyReadyEmitted = true;
+    try { window.parent?.postMessage({ type: "pty-ready" }, "*"); } catch {}
+  }
 };
 
 ws.onclose = () => {
