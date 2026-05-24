@@ -1441,7 +1441,7 @@ function showEasterEgg() {
           const toast = document.createElement("span");
           toast.textContent = " copied ✓";
           toast.style.cssText =
-            "color:#7cffae;margin-left:0.5em;opacity:0;transition:opacity 200ms ease";
+            "color:#E8798A;margin-left:0.5em;opacity:0;transition:opacity 200ms ease";
           link.insertAdjacentElement("afterend", toast);
           requestAnimationFrame(() => (toast.style.opacity = "1"));
           setTimeout(() => {
@@ -1547,18 +1547,18 @@ function showEasterEgg() {
 
     const anim = span.animate(
       [
-        // Burst out from the chip
+        // Burst out from the chip — boxd warm coral
         { transform: `translate(${sx}px, ${sy}px) scale(0.55)`,
-          opacity: 0, color: "#7cffae" },
+          opacity: 0, color: "#E05A6D" },
         // Reach full size just past launch
         { transform: `translate(${sx}px, ${sy}px) scale(1.05)`,
-          opacity: 1, color: "#7cffae", offset: 0.12 },
-        // Peak of the arc — energetic, slightly oversized, brighter
+          opacity: 1, color: "#E05A6D", offset: 0.12 },
+        // Peak of the arc — energetic, slightly oversized, lighter coral
         { transform: `translate(${midX}px, ${midY}px) scale(1.25)`,
-          opacity: 1, color: "#c8ffe0", offset: 0.55 },
-        // Land at the prompt, settling back to phosphor green
+          opacity: 1, color: "#E8798A", offset: 0.55 },
+        // Land at the prompt, settling back to the base coral
         { transform: `translate(${tx}px, ${ty}px) scale(0.85)`,
-          opacity: 0, color: "#7cffae" },
+          opacity: 0, color: "#E05A6D" },
       ],
       { duration: flightMs, easing: "cubic-bezier(0.65, 0, 0.35, 1)", fill: "forwards" },
     );
