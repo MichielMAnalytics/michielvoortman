@@ -1492,6 +1492,30 @@ function showEasterEgg() {
     runForkAnimation();
   });
 
+  // On-screen position of the xterm cursor + the per-cell screen width.
+  // The iframe lives in a CSS3DObject, so we map iframe-document coords to
+  // parent screen space by scaling with the iframe's getBoundingClientRect.
+  function cursorAnchor(): { x: number; y: number; cellW: number } | null {
+    const iframe = sourceScreen.iframe;
+    const doc = iframe.contentDocument;
+    if (!doc) return null;
+    const ta = doc.querySelector(".xterm-helper-textarea") as HTMLElement | null;
+    if (!ta) return null;
+    const taRect = ta.getBoundingClientRect();
+    const docW = doc.documentElement.clientWidth;
+    const docH = doc.documentElement.clientHeight;
+    const ifRect = iframe.getBoundingClientRect();
+    if (!docW || !docH) return null;
+    const scaleX = ifRect.width / docW;
+    const scaleY = ifRect.height / docH;
+    return {
+      x: ifRect.left + (taRect.left + taRect.width / 2) * scaleX,
+      y: ifRect.top + (taRect.top + taRect.height / 2) * scaleY,
+      // xterm's helper textarea is one cell wide.
+      cellW: taRect.width * scaleX,
+    };
+  }
+
   function runForkAnimation() {
     const cmd = "boxd fork";
     const STAGGER = 70;   // ms between consecutive glyph launches
@@ -1499,21 +1523,26 @@ function showEasterEgg() {
     const POST_PAUSE = 420; // ms after the last glyph lands → Enter
 
     const chipRect = chip!.getBoundingClientRect();
-    // We compute the iframe rect ONCE — but the source iframe lives in a 3D
-    // CSS3DObject, so its on-screen rect comes from getBoundingClientRect.
     const ifRect = sourceScreen.iframe.getBoundingClientRect();
-
     const startX = chipRect.left + chipRect.width * 0.5;
     const startY = chipRect.top + chipRect.height * 0.5;
-    // Aim near the prompt cursor — bottom-left quadrant of the CRT plane.
-    const targetX = ifRect.left + ifRect.width * 0.18;
-    const targetY = ifRect.top + ifRect.height * 0.78;
+
+    // Snapshot the cursor anchor + cell width ONCE. Each glyph i predicts
+    // its landing cell as anchor.x + i * cellW — glyph spawns are staggered
+    // 70ms apart but flights take 380ms, so reading the cursor live would
+    // give the same un-advanced position for every glyph.
+    const anchor = cursorAnchor() ?? {
+      x: ifRect.left + ifRect.width * 0.18,
+      y: ifRect.top + ifRect.height * 0.78,
+      cellW: ifRect.width * 0.015,
+    };
 
     for (let i = 0; i < cmd.length; i++) {
-      setTimeout(
-        () => spawnGlyph(cmd[i], startX, startY, targetX, targetY, FLIGHT),
-        i * STAGGER,
-      );
+      setTimeout(() => {
+        const tx = anchor.x + i * anchor.cellW;
+        const ty = anchor.y;
+        spawnGlyph(cmd[i], startX, startY, tx, ty, FLIGHT);
+      }, i * STAGGER);
     }
 
     const totalSpawn = (cmd.length - 1) * STAGGER + FLIGHT;
