@@ -1379,7 +1379,7 @@ function showEasterEgg() {
     "  REWARD :",
     "    30 minutes with the human who built this.",
     "",
-    `    » https://calendar.app.google/iHHtARUD7HvFu5H97`,
+    `    » https://calendar.app.google/8ZY18xRH9qQQuuTo9`,
     "",
     "  press any key to reassemble the unit█",
   ];
