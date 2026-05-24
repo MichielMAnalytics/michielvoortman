@@ -959,6 +959,9 @@ function doFork(src: Machine) {
   machines.push(clone);
   const cloneIdxInRegistry = machines.length - 1;
 
+  // Fade out the "try: boxd fork" nudge — they've found it.
+  document.querySelector(".hud-fork-chip")?.classList.add("taken");
+
   // Register every cloned keycap so its 3D keyboard sends input to the
   // clone's PTY, with a press animation that matches the source's.
   cloneRoot.traverse((o) => {
@@ -1196,37 +1199,16 @@ function releaseKey(ev: PointerEvent) {
 renderer.domElement.addEventListener("pointerup", releaseKey);
 renderer.domElement.addEventListener("pointercancel", releaseKey);
 
-// Hover → pointer cursor over keycaps or any logo. Hovered logo also gets a
-// subtle emissive glow so users learn it's interactive.
+// Hover → pointer cursor over keycaps or any logo.
 let hoverThrottle = 0;
-let hoveredLogo: THREE.Mesh | null = null;
-const GLOW_COLOR = new THREE.Color(0x66ddff);
-function setLogoHover(mesh: THREE.Mesh | null) {
-  if (hoveredLogo === mesh) return;
-  if (hoveredLogo) {
-    const m = hoveredLogo.material as THREE.MeshStandardMaterial;
-    m.emissive.setHex(0x000000);
-    m.emissiveIntensity = 0;
-    m.needsUpdate = true;
-  }
-  hoveredLogo = mesh;
-  if (mesh) {
-    const m = mesh.material as THREE.MeshStandardMaterial;
-    m.emissive.copy(GLOW_COLOR);
-    m.emissiveIntensity = 0.55;
-    m.needsUpdate = true;
-  }
-}
 renderer.domElement.addEventListener("pointermove", (ev) => {
   const now = performance.now();
   if (now - hoverThrottle < 50) return;
   hoverThrottle = now;
-  const keyHit = keycapAt(ev);
-  const logoHit = !keyHit && !explosionStarted ? logoMeshAt(ev) : null;
-  setLogoHover(logoHit);
-  renderer.domElement.style.cursor = (keyHit || logoHit) ? "pointer" : "";
+  let pointer = !!keycapAt(ev);
+  if (!pointer && !explosionStarted) pointer = !!logoMeshAt(ev);
+  renderer.domElement.style.cursor = pointer ? "pointer" : "";
 });
-renderer.domElement.addEventListener("pointerleave", () => setLogoHover(null));
 
 // ---------- Easter egg: explode the unit when the logo is clicked ----------
 type Debris = {

@@ -53,8 +53,46 @@
       }
       .hud-top-left { top: 18px; left: 22px; }
       .hud-bottom-right { right: 22px; bottom: 18px; text-align: right; }
+      .hud-bottom-center {
+        bottom: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+      }
       .hud a { color: #9bb3bd; text-decoration: none; pointer-events: auto; }
       .hud a:hover { color: #e0eef3; }
+
+      /* Chip nudging users toward the easter command. Subtle breathing
+         opacity so it draws the eye without being shouty. Fades out the
+         moment the user runs the fork (vt100.ts sets .hud-fork.taken). */
+      .hud-fork-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border: 1px solid rgba(206, 217, 224, 0.18);
+        border-radius: 999px;
+        background: rgba(10, 10, 10, 0.55);
+        backdrop-filter: blur(4px);
+        color: #cfd8dc;
+        animation: forkPulse 3.2s ease-in-out infinite;
+        transition: opacity 600ms ease;
+      }
+      .hud-fork-chip code {
+        color: #ffe27c;
+        background: rgba(255, 226, 124, 0.08);
+        padding: 1px 6px;
+        border-radius: 4px;
+        letter-spacing: 0.03em;
+      }
+      .hud-fork-chip.taken {
+        opacity: 0;
+        pointer-events: none;
+      }
+      @keyframes forkPulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(255, 226, 124, 0); }
+        50%      { box-shadow: 0 0 14px 2px rgba(255, 226, 124, 0.18); }
+      }
       #loading {
         position: fixed;
         inset: 0;
@@ -79,6 +117,9 @@
     </div>
     <div class="hud hud-bottom-right">
       drag to orbit · scroll to zoom
+    </div>
+    <div class="hud hud-bottom-center" id="hud-fork">
+      <span class="hud-fork-chip">try: <code>boxd fork</code></span>
     </div>
     <script type="module" src="/src/vt100.ts"></script>
   </body>
