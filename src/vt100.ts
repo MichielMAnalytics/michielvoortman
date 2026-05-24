@@ -30,8 +30,34 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   500,
 );
-camera.position.set(11, 9.5, 24);
-camera.lookAt(0, 4.5, 1.5);
+
+// Compute a camera distance that frames the whole VT100 unit (case + tray)
+// with comfortable margin, for *this* viewport's aspect ratio. Without this,
+// narrow portrait viewports (mobile) crop the horizontal FOV so tight that
+// the machine fills the screen — the user just sees one big keyboard.
+// Slightly larger than the literal bounding box because the camera target
+// (y=4.5) sits below the case center (y=5.2), so we need to fit ~5.9 above
+// and ~4.5 below the target.
+const UNIT_W = 14;
+const UNIT_H = 12;
+// Default view direction: the original (11, 9.5, 24) camera relative to the
+// (0, 4.5, 1.5) orbit target — a 3/4 view from slightly above.
+const TARGET = new THREE.Vector3(0, 4.5, 1.5);
+const VIEW_DIR = new THREE.Vector3(11, 9.5 - 4.5, 24 - 1.5).normalize();
+function distanceToFit(): number {
+  const aspect = window.innerWidth / window.innerHeight;
+  const fovV = (camera.fov * Math.PI) / 180;
+  const fovH = 2 * Math.atan(Math.tan(fovV / 2) * aspect);
+  const distV = UNIT_H / (2 * Math.tan(fovV / 2));
+  const distH = UNIT_W / (2 * Math.tan(fovH / 2));
+  return Math.max(distV, distH) * 1.4;
+}
+function frameUnit() {
+  const d = distanceToFit();
+  camera.position.copy(VIEW_DIR).multiplyScalar(d).add(TARGET);
+  camera.lookAt(TARGET);
+}
+frameUnit();
 
 // ---------- Lighting ----------
 scene.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -1428,7 +1454,9 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.target.set(0, 4.5, 1.5);
 controls.minDistance = 16;
-controls.maxDistance = 42;
+// Allow zooming out a fair bit further than the initial framing so users
+// can still pull back if the device pixel ratio leaves them feeling close.
+controls.maxDistance = Math.max(60, distanceToFit() * 1.8);
 controls.minPolarAngle = Math.PI * 0.10;
 controls.maxPolarAngle = Math.PI * 0.55;
 // Full 360° orbit — back of case is modeled (vents + nameplate) and CSS3D
@@ -1445,6 +1473,13 @@ function onResize() {
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
   cssRenderer.setSize(w, h);
+  // Re-frame the camera on resize (handles orientation change on mobile).
+  // Only adjust if no forks happened yet — once the user has multiple
+  // machines, the fork animation manages framing.
+  if (machines.length <= 1) {
+    frameUnit();
+    controls.maxDistance = Math.max(60, distanceToFit() * 1.8);
+  }
 }
 window.addEventListener("resize", onResize);
 
