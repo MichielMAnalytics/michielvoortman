@@ -891,6 +891,7 @@ const BANNER = [
   `${CYAN}└──────────────────────────────────────────────────────────┘${RESET}`,
   "",
   `type ${BOLD}help${RESET} for commands, ${BOLD}ls${RESET} to browse, or ${BOLD}cat photos/*${RESET} for pictures.`,
+  `try ${BOLD}boxd fork${RESET} to clone this machine.`,
   "",
   "",
 ].join("\n");
