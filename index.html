@@ -87,7 +87,7 @@
         cursor: pointer;
       }
       .hud-fork-chip:hover {
-        border-color: rgba(255, 226, 124, 0.55);
+        border-color: rgba(124, 255, 174, 0.55);
         background: rgba(15, 15, 15, 0.75);
         transform: translateY(-1px);
       }
@@ -95,16 +95,16 @@
         transform: translateY(0) scale(0.97);
       }
       .hud-fork-chip code {
-        color: #ffe27c;
-        background: rgba(255, 226, 124, 0.08);
+        color: #7cffae;
+        background: rgba(124, 255, 174, 0.08);
         padding: 1px 6px;
         border-radius: 4px;
         letter-spacing: 0.03em;
         transition: color 180ms ease, background 180ms ease;
       }
       .hud-fork-chip:hover code {
-        color: #ffeea0;
-        background: rgba(255, 226, 124, 0.16);
+        color: #a4ffd0;
+        background: rgba(124, 255, 174, 0.16);
       }
       .hud-fork-chip.firing {
         animation: forkIgnite 360ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
@@ -114,13 +114,13 @@
         pointer-events: none;
       }
       @keyframes forkPulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(255, 226, 124, 0); }
-        50%      { box-shadow: 0 0 14px 2px rgba(255, 226, 124, 0.18); }
+        0%, 100% { box-shadow: 0 0 0 0 rgba(124, 255, 174, 0); }
+        50%      { box-shadow: 0 0 14px 2px rgba(124, 255, 174, 0.18); }
       }
       @keyframes forkIgnite {
-        0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(255, 226, 124, 0); }
-        45%  { transform: scale(1.08); box-shadow: 0 0 28px 10px rgba(255, 226, 124, 0.55); }
-        100% { transform: scale(0.94); box-shadow: 0 0 0 0 rgba(255, 226, 124, 0); }
+        0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(124, 255, 174, 0); }
+        45%  { transform: scale(1.08); box-shadow: 0 0 28px 10px rgba(124, 255, 174, 0.55); }
+        100% { transform: scale(0.94); box-shadow: 0 0 0 0 rgba(124, 255, 174, 0); }
       }
 
       /* Each character of "boxd fork" launches from the chip as one of
@@ -135,11 +135,11 @@
         font-family: ui-monospace, "SF Mono", Menlo, monospace;
         font-size: 18px;
         font-weight: 600;
-        color: #ffe27c;
+        color: #7cffae;
         letter-spacing: 0.02em;
         text-shadow:
-          0 0 6px rgba(255, 226, 124, 0.7),
-          0 0 14px rgba(255, 226, 124, 0.4),
+          0 0 6px rgba(124, 255, 174, 0.7),
+          0 0 14px rgba(124, 255, 174, 0.4),
           0 0 26px rgba(124, 255, 174, 0.18);
         will-change: transform, opacity, color;
       }
